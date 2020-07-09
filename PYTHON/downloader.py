@@ -8,6 +8,7 @@
 """
 
 import os
+import errno
 import time
 import traceback
 from urllib import parse
@@ -80,12 +81,45 @@ class Downloader(object):
             dirname = os.path.dirname(filename)
             os.makedirs(dirname, exist_ok=True)
 
-            with open(filename, 'wb') as f:
-                # 分块写入磁盘，支持大文件
-                for chunk in r.iter_content(chunk_size=1024):
-                    chunk and f.write(chunk)
+            try:
+                with open(filename, 'wb') as f:
+                    # 分块写入磁盘，支持大文件
+                    for chunk in r.iter_content(chunk_size=1024):
+                        chunk and f.write(chunk)
+            except Exception as e:
+                Downloader.silent_remove(filename)
+                print(cf.blue(f'下载《{title}》时出现未知错误，已下载部分已被删除'))
+
+                raise
+
+            # 检查文件的完整性
+            # requests v3 也许会支持在文件不完整时抛出异常，但是 v2 不会
+            # 参考：https://blog.petrzemek.net/2018/04/22/on-incomplete-http-reads-and-the-requests-library-in-python/
+            content_len = int(r.headers.get('Content-Length'))
+            actual_len = r.raw.tell()
+            if content_len != actual_len:
+                Downloader.silent_remove(filename)
+                print(cf.blue(f'下载《{title}》时发现服务器返回的数据不完整，已删除不完整的文件'))
+
+                raise IOError(f'读取不完整，已读取 {actual_len} 个字节，预期还差 {content_len - actual_len} 个字节，但是连接被关闭了')
 
         return title
+
+    @staticmethod
+    def silent_remove(filename):
+        """
+        静默删除
+        相较于先检查文件是否存在的写法，这种写法更 pythonic，虽然看起来比较丑陋，但是在多线程中这种删除方式比事先检查文件是否存在更优，因为可能
+        遇到当前线程去检查此文件刚刚还存在，但是去删的时候却被其它线程抢了先的情况
+        参考：https://stackoverflow.com/a/10840586/8507338
+        :param filename:
+        :return:
+        """
+        try:
+            os.remove(filename)
+        except OSError as ose:
+            if ose.errno != errno.ENOENT:
+                raise
 
     def __get_books_items(self, page_url):
         """
