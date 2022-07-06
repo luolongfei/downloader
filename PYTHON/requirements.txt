@@ -1,4 +1,4 @@
 colorful==0.5.4
-lxml==4.6.3
+lxml==4.9.1
 pyquery==1.4.1
 requests==2.24.0
